@@ -29,10 +29,13 @@
 //     }
 // }
 import { sql } from '@vercel/postgres';
+import 'dotenv/config';
 
 async function initDB() {
     try {
-        // Drop the old transactions table
+        console.log('Initializing database...');
+        
+        // Drop the old transactions table if it exists
         await sql`DROP TABLE IF EXISTS transactions`;
         
         // Create new vehicle_inspections table

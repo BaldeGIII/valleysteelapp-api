@@ -41,10 +41,10 @@
 
 import express from "express";
 import dotenv, { parse } from "dotenv";
-import { initDB } from "./config/db.js"; 
-import rateLimiter from "./middleware/rateLimiter.js";
-import inspectionsRoute from "./routes/inspectionsRoute.js"; // Updated import
-import job from "./config/cron.js";
+import { initDB } from "./config/db.js";  
+import rateLimiter from "./middleware/rateLimiter.js";  
+import inspectionsRoute from "./routes/inspectionsRoute.js";  
+import job from "./config/cron.js";  
 
 dotenv.config();
 
@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     res.send("Hello from the server!");
 });
 
-app.use("/api/inspections", inspectionsRoute); // Updated route
+app.use("/api/inspections", inspectionsRoute);
 
 initDB().then (() => {
     app.listen(PORT, () => {
