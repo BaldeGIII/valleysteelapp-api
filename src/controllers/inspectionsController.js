@@ -119,16 +119,17 @@ export async function getInspectionsByUserId(req, res) {
     try {
         const { userId } = req.params;
         
-        const inspections = await sql`
+        const result = await sql`
             SELECT * FROM vehicle_inspections WHERE user_id = ${userId} ORDER BY created_at DESC
-        `
-        res.status(200).json(inspections);
+        `;
+        
+        // Return just the rows array, not the entire database response object
+        res.status(200).json(result.rows || result);
     } catch (error) {
         console.log("Error fetching inspections:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 }
-
 export async function createInspection(req, res){
     try {
         const { 
