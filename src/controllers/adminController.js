@@ -60,9 +60,9 @@ export async function updateInspection(req, res) {
         // Verify admin status
         console.log('Checking admin status for user:', adminUserId);
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
-        console.log('Admin check result:', adminCheck.rows);
+        console.log('Admin check result:', adminCheck);
         
-        if (adminCheck.rows?.length === 0 || adminCheck.rows?.[0]?.role !== 'admin') {
+        if (adminCheck.length === 0 || adminCheck[0]?.role !== 'admin') {
             console.log('❌ Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
@@ -70,131 +70,47 @@ export async function updateInspection(req, res) {
         console.log('✅ Admin verified, updating inspection:', id);
         console.log('Update data:', updateData);
         
-        // Build the update query dynamically
-        const updateFields = [];
-        const updateValues = [];
-        let paramIndex = 1;
-        
-        // Handle each field that might be updated
-        if (updateData.location !== undefined) {
-            updateFields.push(`location = $${paramIndex}`);
-            updateValues.push(updateData.location);
-            paramIndex++;
-        }
-        
-        if (updateData.date !== undefined) {
-            updateFields.push(`date = $${paramIndex}`);
-            updateValues.push(updateData.date);
-            paramIndex++;
-        }
-        
-        if (updateData.time !== undefined) {
-            updateFields.push(`time = $${paramIndex}`);
-            updateValues.push(updateData.time);
-            paramIndex++;
-        }
-        
-        if (updateData.vehicle !== undefined) {
-            updateFields.push(`vehicle = $${paramIndex}`);
-            updateValues.push(updateData.vehicle);
-            paramIndex++;
-        }
-        
-        if (updateData.speedometer_reading !== undefined) {
-            updateFields.push(`speedometer_reading = $${paramIndex}`);
-            updateValues.push(updateData.speedometer_reading);
-            paramIndex++;
-        }
-        
-        if (updateData.defective_items !== undefined) {
-            updateFields.push(`defective_items = $${paramIndex}`);
-            updateValues.push(JSON.stringify(updateData.defective_items));
-            paramIndex++;
-        }
-        
-        if (updateData.truck_trailer_items !== undefined) {
-            updateFields.push(`truck_trailer_items = $${paramIndex}`);
-            updateValues.push(JSON.stringify(updateData.truck_trailer_items));
-            paramIndex++;
-        }
-        
-        if (updateData.trailer_number !== undefined) {
-            updateFields.push(`trailer_number = $${paramIndex}`);
-            updateValues.push(updateData.trailer_number);
-            paramIndex++;
-        }
-        
-        if (updateData.remarks !== undefined) {
-            updateFields.push(`remarks = $${paramIndex}`);
-            updateValues.push(updateData.remarks);
-            paramIndex++;
-        }
-        
-        if (updateData.condition_satisfactory !== undefined) {
-            updateFields.push(`condition_satisfactory = $${paramIndex}`);
-            updateValues.push(updateData.condition_satisfactory);
-            paramIndex++;
-        }
-        
-        if (updateData.driver_signature !== undefined) {
-            updateFields.push(`driver_signature = $${paramIndex}`);
-            updateValues.push(updateData.driver_signature);
-            paramIndex++;
-        }
-        
-        if (updateData.defects_corrected !== undefined) {
-            updateFields.push(`defects_corrected = $${paramIndex}`);
-            updateValues.push(updateData.defects_corrected);
-            paramIndex++;
-        }
-        
-        if (updateData.defects_need_correction !== undefined) {
-            updateFields.push(`defects_need_correction = $${paramIndex}`);
-            updateValues.push(updateData.defects_need_correction);
-            paramIndex++;
-        }
-        
-        if (updateData.mechanic_signature !== undefined) {
-            updateFields.push(`mechanic_signature = $${paramIndex}`);
-            updateValues.push(updateData.mechanic_signature);
-            paramIndex++;
-        }
-        
-        // Always update the updated_at timestamp
-        updateFields.push(`updated_at = $${paramIndex}`);
-        updateValues.push(new Date().toISOString());
-        paramIndex++;
-        
-        // Add the inspection ID for the WHERE clause
-        updateValues.push(id);
-        
-        if (updateFields.length === 1) { // Only updated_at was added
-            return res.status(400).json({ error: "No fields to update" });
-        }
-        
-        const updateQuery = `
-            UPDATE vehicle_inspections 
-            SET ${updateFields.join(', ')} 
-            WHERE id = $${paramIndex}
-            RETURNING *
+        // First get the current inspection
+        const currentInspection = await sql`
+            SELECT * FROM vehicle_inspections WHERE id = ${id}
         `;
         
-        console.log('Update query:', updateQuery);
-        console.log('Update values:', updateValues);
-        
-        const result = await sql.unsafe(updateQuery, updateValues);
-        
-        console.log('Update result:', result.rows);
-        
-        if (result.rows?.length === 0) {
+        if (currentInspection.length === 0) {
             console.log('❌ Inspection not found');
             return res.status(404).json({ error: "Inspection not found" });
         }
         
+        const current = currentInspection[0];
+        
+        // Update with new values or keep existing ones
+        const result = await sql`
+            UPDATE vehicle_inspections 
+            SET 
+                location = ${updateData.location !== undefined ? updateData.location : current.location},
+                date = ${updateData.date !== undefined ? updateData.date : current.date},
+                time = ${updateData.time !== undefined ? updateData.time : current.time},
+                vehicle = ${updateData.vehicle !== undefined ? updateData.vehicle : current.vehicle},
+                speedometer_reading = ${updateData.speedometer_reading !== undefined ? updateData.speedometer_reading : current.speedometer_reading},
+                defective_items = ${updateData.defective_items !== undefined ? JSON.stringify(updateData.defective_items) : current.defective_items},
+                truck_trailer_items = ${updateData.truck_trailer_items !== undefined ? JSON.stringify(updateData.truck_trailer_items) : current.truck_trailer_items},
+                trailer_number = ${updateData.trailer_number !== undefined ? updateData.trailer_number : current.trailer_number},
+                remarks = ${updateData.remarks !== undefined ? updateData.remarks : current.remarks},
+                condition_satisfactory = ${updateData.condition_satisfactory !== undefined ? updateData.condition_satisfactory : current.condition_satisfactory},
+                driver_signature = ${updateData.driver_signature !== undefined ? updateData.driver_signature : current.driver_signature},
+                defects_corrected = ${updateData.defects_corrected !== undefined ? updateData.defects_corrected : current.defects_corrected},
+                defects_need_correction = ${updateData.defects_need_correction !== undefined ? updateData.defects_need_correction : current.defects_need_correction},
+                mechanic_signature = ${updateData.mechanic_signature !== undefined ? updateData.mechanic_signature : current.mechanic_signature},
+                updated_at = ${new Date().toISOString()}
+            WHERE id = ${id}
+            RETURNING *
+        `;
+        
+        console.log('Update result:', result);
         console.log('✅ Inspection updated successfully');
+        
         res.status(200).json({ 
             message: "Inspection updated successfully", 
-            inspection: result.rows[0] 
+            inspection: result[0] 
         });
         
     } catch (error) {
