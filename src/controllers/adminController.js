@@ -160,3 +160,32 @@ export async function getInspectionStats(req, res) {
         res.status(500).json({ error: "Internal server error" });
     }
 }
+
+export async function getAdminSingleInspection(req, res) {
+    try {
+        const { id } = req.params;
+        const { adminUserId } = req.body;
+        
+        // Verify admin status
+        const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
+        if (adminCheck.rows?.[0]?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        
+        const result = await sql`
+            SELECT vi.*, u.email as user_email 
+            FROM vehicle_inspections vi 
+            LEFT JOIN users u ON vi.user_id = u.id 
+            WHERE vi.id = ${id}
+        `;
+        
+        if (result.rows?.length === 0) {
+            return res.status(404).json({ error: "Inspection not found" });
+        }
+        
+        res.status(200).json(result.rows[0]);
+    } catch (error) {
+        console.error("Error fetching single inspection:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
