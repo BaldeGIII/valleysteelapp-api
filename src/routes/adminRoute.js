@@ -4,7 +4,8 @@ import {
     getAllInspections,
     updateInspection,
     adminDeleteInspection,
-    getInspectionStats
+    getInspectionStats,
+    getAdminSingleInspection
 } from "../controllers/adminController.js";
 
 const router = express.Router();
