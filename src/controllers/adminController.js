@@ -57,14 +57,13 @@ export async function updateInspection(req, res) {
             return res.status(400).json({ error: "Missing inspection ID or admin user ID" });
         }
         
-        // Verify admin status - FIXED TO MATCH OTHER FUNCTIONS
+        // Verify admin status
         console.log('Checking admin status for user:', adminUserId);
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
         console.log('Admin check result:', adminCheck);
         console.log('Admin check rows:', adminCheck.rows);
         console.log('Admin role:', adminCheck.rows?.[0]?.role);
         
-        // Use the same pattern as other functions
         if (adminCheck.rows?.[0]?.role !== 'admin') {
             console.log('❌ Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
@@ -73,14 +72,13 @@ export async function updateInspection(req, res) {
         console.log('✅ Admin verified, updating inspection:', id);
         console.log('Update data:', updateData);
         
-        // First get the current inspection - ALSO FIX THIS
+        // First get the current inspection
         const currentInspection = await sql`
             SELECT * FROM vehicle_inspections WHERE id = ${id}
         `;
         
         console.log('Current inspection query result:', currentInspection);
         
-        // Use consistent access pattern
         if (!currentInspection.rows || currentInspection.rows.length === 0) {
             console.log('❌ Inspection not found');
             return res.status(404).json({ error: "Inspection not found" });
@@ -89,7 +87,7 @@ export async function updateInspection(req, res) {
         const current = currentInspection.rows[0];
         console.log('Current inspection data:', current);
         
-        // Update with new values or keep existing ones
+        // Update with new values or keep existing ones (REMOVED updated_at)
         const result = await sql`
             UPDATE vehicle_inspections 
             SET 
@@ -106,8 +104,7 @@ export async function updateInspection(req, res) {
                 driver_signature = ${updateData.driver_signature !== undefined ? updateData.driver_signature : current.driver_signature},
                 defects_corrected = ${updateData.defects_corrected !== undefined ? updateData.defects_corrected : current.defects_corrected},
                 defects_need_correction = ${updateData.defects_need_correction !== undefined ? updateData.defects_need_correction : current.defects_need_correction},
-                mechanic_signature = ${updateData.mechanic_signature !== undefined ? updateData.mechanic_signature : current.mechanic_signature},
-                updated_at = ${new Date().toISOString()}
+                mechanic_signature = ${updateData.mechanic_signature !== undefined ? updateData.mechanic_signature : current.mechanic_signature}
             WHERE id = ${id}
             RETURNING *
         `;
@@ -115,7 +112,6 @@ export async function updateInspection(req, res) {
         console.log('Update result:', result);
         console.log('✅ Inspection updated successfully');
         
-        // Use consistent access pattern
         res.status(200).json({ 
             message: "Inspection updated successfully", 
             inspection: result.rows?.[0] || result[0]
