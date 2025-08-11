@@ -14,9 +14,12 @@ async function initDB() {
         )`;
 
         // Insert default admin user (replace with your admin email)
+        // Fixed: Handle conflicts on both id and email
         await sql`INSERT INTO users (id, email, role) 
                   VALUES ('admin_user_id', 'baldemarguajardo20@gmail.com', 'admin') 
-                  ON CONFLICT (email) DO NOTHING`;
+                  ON CONFLICT (id) DO UPDATE SET 
+                    email = EXCLUDED.email,
+                    role = EXCLUDED.role`;
 
         // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
