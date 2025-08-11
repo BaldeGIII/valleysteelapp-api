@@ -13,19 +13,27 @@ async function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;
 
-        // Update your existing account to admin (replace with your actual Clerk user ID)
-        // You can find your Clerk user ID in the console logs when you log in
-        const yourClerkUserId = "user_30yBMfBIYMUv07iT9jOhhVqsfxN"; // Replace with your actual ID
-        const yourEmail = "baldemarguajardo20@gmail.com"; // Replace with your actual email
+        // Update your existing account to admin
+        const yourClerkUserId = "user_30yBMfBIYMUv07iT9jOhhVqsfxN";
+        const yourEmail = "baldemarguajardo20@gmail.com";
         
-        // First, try to insert the user (in case they don't exist)
-        await sql`INSERT INTO users (id, email, role) 
-                  VALUES (${yourClerkUserId}, ${yourEmail}, 'admin') 
-                  ON CONFLICT (id) DO UPDATE SET 
-                    email = EXCLUDED.email,
-                    role = 'admin'`;
+        // Check if user exists by email first
+        const existingUser = await sql`SELECT id, email, role FROM users WHERE email = ${yourEmail}`;
+        
+        if (existingUser.rows && existingUser.rows.length > 0) {
+            // User exists with this email, update their role to admin
+            await sql`UPDATE users SET role = 'admin' WHERE email = ${yourEmail}`;
+            console.log(`Updated existing user ${yourEmail} to admin role.`);
+        } else {
+            // User doesn't exist, create new admin user
+            await sql`INSERT INTO users (id, email, role) 
+                      VALUES (${yourClerkUserId}, ${yourEmail}, 'admin')`;
+            console.log(`Created new admin user ${yourEmail}.`);
+        }
 
-        console.log(`Admin user ${yourEmail} created/updated successfully.`);
+        // Also handle the case where the Clerk ID might be different
+        // Update the user ID if needed
+        await sql`UPDATE users SET id = ${yourClerkUserId} WHERE email = ${yourEmail} AND id != ${yourClerkUserId}`;
 
         // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
