@@ -13,16 +13,19 @@ async function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;
 
-        // Check if admin user exists before inserting
-        const existingAdmin = await sql`SELECT id FROM users WHERE id = 'admin_user_id'`;
+        // Update your existing account to admin (replace with your actual Clerk user ID)
+        // You can find your Clerk user ID in the console logs when you log in
+        const yourClerkUserId = "user_30yBMfBIYMUv07iT9jOhhVqsfxN"; // Replace with your actual ID
+        const yourEmail = "baldemarguajardo20@gmail.com"; // Replace with your actual email
         
-        if (existingAdmin.rows.length === 0) {
-            await sql`INSERT INTO users (id, email, role) 
-                      VALUES ('admin_user_id', 'baldemarguajardo20@gmail.com', 'admin')`;
-            console.log('Admin user created successfully.');
-        } else {
-            console.log('Admin user already exists.');
-        }
+        // First, try to insert the user (in case they don't exist)
+        await sql`INSERT INTO users (id, email, role) 
+                  VALUES (${yourClerkUserId}, ${yourEmail}, 'admin') 
+                  ON CONFLICT (id) DO UPDATE SET 
+                    email = EXCLUDED.email,
+                    role = 'admin'`;
+
+        console.log(`Admin user ${yourEmail} created/updated successfully.`);
 
         // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
