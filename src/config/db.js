@@ -1,33 +1,3 @@
-// import {neon} from "@neondatabase/serverless";
-
-// import"dotenv/config";
-
-// // Creates a SQL connection using our DB Url
-// export const sql = neon(process.env.DATABASE_URL)
-
-// export async function initDB() {
-//     try {
-//         await sql`CREATE TABLE IF NOT EXISTS transactions (
-//             id SERIAL PRIMARY KEY,
-//             user_id VARCHAR(255) NOT NULL,
-//             title VARCHAR(255) NOT NULL,
-//             amount DECIMAL(10, 2) NOT NULL,
-//             category VARCHAR(255) NOT NULL,
-//             created_at DATE NOT NULL DEFAULT CURRENT_DATE
-//         )`;
-
-//         // DECIMAL(10, 2)
-//         // means: a fixed-point number with:
-//         // 10 digits total 
-//         // 2 digits after the decimal point
-//         // so: the max value it can store is 99999999.99
-
-//         console.log("Database initialized successfully.");
-//     } catch (error) {
-//         console.error("Error initializing database:", error);
-//         process.exit(1);
-//     }
-// }
 import { sql } from '@vercel/postgres';
 import 'dotenv/config';
 
@@ -35,10 +5,20 @@ async function initDB() {
     try {
         console.log('Initializing database...');
         
-        // Drop the old transactions table if it exists
-        await sql`DROP TABLE IF EXISTS transactions`;
-        
-        // Create new vehicle_inspections table
+        // Create users table for admin roles
+        await sql`CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(255) PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            role VARCHAR(50) DEFAULT 'user',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`;
+
+        // Insert default admin user (replace with your admin email)
+        await sql`INSERT INTO users (id, email, role) 
+                  VALUES ('admin_user_id', 'baldemarguajardo20@gmail.com', 'admin') 
+                  ON CONFLICT (email) DO NOTHING`;
+
+        // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
             id SERIAL PRIMARY KEY,
             user_id VARCHAR(255) NOT NULL,
@@ -56,7 +36,9 @@ async function initDB() {
             defects_corrected BOOLEAN DEFAULT false,
             defects_need_correction BOOLEAN DEFAULT false,
             mechanic_signature VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by VARCHAR(255)
         )`;
 
         console.log("Database initialized successfully.");
