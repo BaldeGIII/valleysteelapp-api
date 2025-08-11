@@ -13,13 +13,16 @@ async function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;
 
-        // Insert default admin user (replace with your admin email)
-        // Fixed: Handle conflicts on both id and email
-        await sql`INSERT INTO users (id, email, role) 
-                  VALUES ('admin_user_id', 'baldemarguajardo20@gmail.com', 'admin') 
-                  ON CONFLICT (id) DO UPDATE SET 
-                    email = EXCLUDED.email,
-                    role = EXCLUDED.role`;
+        // Check if admin user exists before inserting
+        const existingAdmin = await sql`SELECT id FROM users WHERE id = 'admin_user_id'`;
+        
+        if (existingAdmin.rows.length === 0) {
+            await sql`INSERT INTO users (id, email, role) 
+                      VALUES ('admin_user_id', 'baldemarguajardo20@gmail.com', 'admin')`;
+            console.log('Admin user created successfully.');
+        } else {
+            console.log('Admin user already exists.');
+        }
 
         // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
