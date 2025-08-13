@@ -1,5 +1,148 @@
 import { sql } from "../config/db.js";
 
+export async function getAllUsers(req, res) {
+    try {
+        const { userId } = req.params;
+        
+        // Verify admin status
+        const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        
+        const users = await sql`
+            SELECT id, email, role, created_at 
+            FROM users 
+            ORDER BY created_at DESC
+        `;
+        
+        const userResults = users.rows || users;
+        res.status(200).json(userResults);
+    } catch (error) {
+        console.error("Error fetching users:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+export async function updateUserRole(req, res) {
+    try {
+        console.log('=== UPDATE USER ROLE REQUEST ===');
+        const { userId } = req.params; // User to update
+        const { adminUserId, newRole } = req.body; // Admin making the change and new role
+        
+        console.log('Admin user:', adminUserId);
+        console.log('Target user:', userId);
+        console.log('New role:', newRole);
+        
+        if (!userId || !adminUserId || !newRole) {
+            return res.status(400).json({ error: "Missing required parameters" });
+        }
+        
+        if (!['user', 'admin'].includes(newRole)) {
+            return res.status(400).json({ error: "Invalid role. Must be 'user' or 'admin'" });
+        }
+        
+        // Verify admin status of the person making the change
+        const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        
+        // Check if target user exists
+        const targetUserCheck = await sql`SELECT id, email, role FROM users WHERE id = ${userId}`;
+        const targetUserResult = targetUserCheck.rows || targetUserCheck;
+        if (!targetUserResult || targetUserResult.length === 0) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
+        const targetUser = targetUserResult[0];
+        
+        // Prevent admin from demoting themselves (safety check)
+        if (adminUserId === userId && newRole !== 'admin') {
+            return res.status(400).json({ error: "You cannot remove your own admin privileges" });
+        }
+        
+        // Update the user's role
+        const updateResult = await sql`
+            UPDATE users 
+            SET role = ${newRole}
+            WHERE id = ${userId}
+            RETURNING id, email, role
+        `;
+        
+        const updatedUser = updateResult.rows?.[0] || updateResult[0];
+        
+        console.log('✅ User role updated successfully:', updatedUser);
+        
+        res.status(200).json({ 
+            message: `User role updated successfully from '${targetUser.role}' to '${newRole}'`, 
+            user: updatedUser
+        });
+        
+    } catch (error) {
+        console.error("❌ Error updating user role:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
+    }
+}
+
+export async function promoteUserToAdmin(req, res) {
+    try {
+        const { userEmail } = req.body;
+        const { adminUserId } = req.body;
+        
+        console.log('=== PROMOTE USER TO ADMIN ===');
+        console.log('Admin user:', adminUserId);
+        console.log('Target email:', userEmail);
+        
+        if (!userEmail || !adminUserId) {
+            return res.status(400).json({ error: "Missing user email or admin user ID" });
+        }
+        
+        // Verify admin status
+        const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        
+        // Find user by email
+        const userCheck = await sql`SELECT id, email, role FROM users WHERE email = ${userEmail}`;
+        const userResult = userCheck.rows || userCheck;
+        if (!userResult || userResult.length === 0) {
+            return res.status(404).json({ error: "User not found with that email address" });
+        }
+        
+        const targetUser = userResult[0];
+        
+        if (targetUser.role === 'admin') {
+            return res.status(400).json({ error: "User is already an admin" });
+        }
+        
+        // Promote user to admin
+        const updateResult = await sql`
+            UPDATE users 
+            SET role = 'admin'
+            WHERE email = ${userEmail}
+            RETURNING id, email, role
+        `;
+        
+        const updatedUser = updateResult.rows?.[0] || updateResult[0];
+        
+        console.log('✅ User promoted to admin:', updatedUser);
+        
+        res.status(200).json({ 
+            message: `User ${userEmail} has been promoted to admin`, 
+            user: updatedUser
+        });
+        
+    } catch (error) {
+        console.error("❌ Error promoting user to admin:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
+    }
+}
+
 export async function getDefectiveItemsStats(req, res) {
     try {
         console.log('=== GET COMBINED DEFECTIVE ITEMS STATS ===');
