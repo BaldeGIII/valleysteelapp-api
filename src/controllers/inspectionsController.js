@@ -110,16 +110,14 @@ export async function getSingleInspection(req, res) {
             WHERE vi.id = ${id}
         `;
         
-        console.log('Query result:', result);
+        const inspectionResult = result.rows || result;
+        console.log('Query result:', inspectionResult);
         
-        // Handle both Vercel Postgres and regular response formats
-        const inspections = result.rows || result;
-        
-        if (!inspections || inspections.length === 0) {
+        if (!inspectionResult || inspectionResult.length === 0) {
             return res.status(404).json({ error: "Inspection not found" });
         }
         
-        const inspection = inspections[0];
+        const inspection = inspectionResult[0];
         console.log('Found inspection:', inspection);
         
         // Parse JSON fields if they're strings

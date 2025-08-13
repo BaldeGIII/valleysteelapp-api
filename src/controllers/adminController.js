@@ -14,96 +14,94 @@ export async function getDefectiveItemsStats(req, res) {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
-        // Get all inspections with defective items or truck/trailer items
+        // Get all inspections - we'll filter the data processing instead of in SQL
         const inspections = await sql`
             SELECT defective_items, truck_trailer_items
             FROM vehicle_inspections 
-            WHERE (defective_items IS NOT NULL AND defective_items != '')
-            OR (truck_trailer_items IS NOT NULL AND truck_trailer_items != '')
+            ORDER BY created_at DESC
         `;
 
         const inspectionResults = inspections.rows || inspections;
-        console.log(`Found ${inspectionResults.length} inspections with defective items`);
+        console.log(`Found ${inspectionResults.length} total inspections`);
 
         // Combined count for all items
         const combinedItemCounts = {};
+        let processedCount = 0;
+        let errorCount = 0;
         
         inspectionResults.forEach((inspection, index) => {
-            console.log(`Processing inspection ${index + 1}:`, {
-                defective_items: typeof inspection.defective_items,
-                truck_trailer_items: typeof inspection.truck_trailer_items
-            });
+            let hasDefectiveItems = false;
+            let hasTruckTrailerItems = false;
 
             // Process car defective items
             if (inspection.defective_items) {
                 try {
-                    let defectiveItems;
+                    let defectiveItems = null;
                     
+                    // Handle different data types
                     if (typeof inspection.defective_items === 'string') {
-                        // Handle string JSON
-                        if (inspection.defective_items.trim() === '' || 
-                            inspection.defective_items === '{}' || 
-                            inspection.defective_items === 'null') {
-                            defectiveItems = {};
-                        } else {
-                            defectiveItems = JSON.parse(inspection.defective_items);
+                        const trimmed = inspection.defective_items.trim();
+                        if (trimmed && trimmed !== '{}' && trimmed !== 'null' && trimmed !== 'undefined') {
+                            defectiveItems = JSON.parse(trimmed);
                         }
                     } else if (typeof inspection.defective_items === 'object' && inspection.defective_items !== null) {
-                        // Already an object
                         defectiveItems = inspection.defective_items;
-                    } else {
-                        defectiveItems = {};
                     }
                     
                     if (defectiveItems && typeof defectiveItems === 'object') {
                         Object.entries(defectiveItems).forEach(([itemKey, isSelected]) => {
-                            if (isSelected === true || isSelected === 'true') {
+                            // Only count true values (not false)
+                            if (isSelected === true || isSelected === 'true' || isSelected === 1) {
                                 combinedItemCounts[itemKey] = (combinedItemCounts[itemKey] || 0) + 1;
+                                hasDefectiveItems = true;
                             }
                         });
                     }
                 } catch (error) {
-                    console.error('Error parsing defective items for inspection:', inspection, error);
-                    // Continue processing other inspections
+                    console.error(`Error parsing defective items for inspection ${index}:`, error.message);
+                    errorCount++;
                 }
             }
 
             // Process truck/trailer items
             if (inspection.truck_trailer_items) {
                 try {
-                    let truckTrailerItems;
+                    let truckTrailerItems = null;
                     
+                    // Handle different data types
                     if (typeof inspection.truck_trailer_items === 'string') {
-                        // Handle string JSON
-                        if (inspection.truck_trailer_items.trim() === '' || 
-                            inspection.truck_trailer_items === '{}' || 
-                            inspection.truck_trailer_items === 'null') {
-                            truckTrailerItems = {};
-                        } else {
-                            truckTrailerItems = JSON.parse(inspection.truck_trailer_items);
+                        const trimmed = inspection.truck_trailer_items.trim();
+                        if (trimmed && trimmed !== '{}' && trimmed !== 'null' && trimmed !== 'undefined') {
+                            truckTrailerItems = JSON.parse(trimmed);
                         }
                     } else if (typeof inspection.truck_trailer_items === 'object' && inspection.truck_trailer_items !== null) {
-                        // Already an object
                         truckTrailerItems = inspection.truck_trailer_items;
-                    } else {
-                        truckTrailerItems = {};
                     }
                     
                     if (truckTrailerItems && typeof truckTrailerItems === 'object') {
                         Object.entries(truckTrailerItems).forEach(([itemKey, isSelected]) => {
-                            if (isSelected === true || isSelected === 'true') {
+                            // Only count true values (not false)
+                            if (isSelected === true || isSelected === 'true' || isSelected === 1) {
                                 // Add prefix to distinguish truck/trailer items
                                 const prefixedKey = `trailer_${itemKey}`;
                                 combinedItemCounts[prefixedKey] = (combinedItemCounts[prefixedKey] || 0) + 1;
+                                hasTruckTrailerItems = true;
                             }
                         });
                     }
                 } catch (error) {
-                    console.error('Error parsing truck trailer items for inspection:', inspection, error);
-                    // Continue processing other inspections
+                    console.error(`Error parsing truck trailer items for inspection ${index}:`, error.message);
+                    errorCount++;
                 }
             }
+
+            if (hasDefectiveItems || hasTruckTrailerItems) {
+                processedCount++;
+            }
         });
+
+        console.log(`Processed ${processedCount} inspections with defective items, ${errorCount} errors`);
+        console.log('Combined item counts:', combinedItemCounts);
 
         // Convert combined items to array format for chart
         const combinedChartData = Object.entries(combinedItemCounts)
@@ -120,9 +118,10 @@ export async function getDefectiveItemsStats(req, res) {
                     label: cleanKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
                 };
             })
+            .filter(item => item.count > 0) // Only include items with actual counts
             .sort((a, b) => b.count - a.count); // Sort by frequency
 
-        console.log('Combined chart data:', combinedChartData);
+        console.log(`Returning ${combinedChartData.length} chart items`);
         
         res.status(200).json(combinedChartData);
     } catch (error) {
