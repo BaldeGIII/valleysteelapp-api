@@ -1,24 +1,24 @@
-import ratelimit from "../config/upstash.js";
+import rateLimit from "express-rate-limit";
 
-const rateLimiter = async (req, res, next) => {
-    try {
-
-        // here we just kept it simple
-        // in a real-world application put the userId or ipAddress in the key
-        const{success} = await ratelimit.limit("my-rate-limit")
-
-        if (!success) {
-            return res.status(429).json({ 
-                message: "Too many requests, please try again later." 
-            });
-        }
-
-        next();
-    } catch (error) {
-        console.error("Rate limiter error:", error);
-        next(error);
-    }
-};
+const rateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  max: 100, // Increased from default (usually 5-10) to 100 requests per minute
+  message: {
+    error: "Too many requests, please try again later.",
+    retryAfter: "1 minute"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => req.path === '/api/health',
+  // Add request info for debugging
+  handler: (req, res) => {
+    console.log(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`);
+    res.status(429).json({
+      error: "Too many requests, please try again later.",
+      retryAfter: "1 minute"
+    });
+  }
+});
 
 export default rateLimiter;
-
