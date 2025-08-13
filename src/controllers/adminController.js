@@ -1,64 +1,108 @@
 import { sql } from "../config/db.js";
 
-
 export async function getDefectiveItemsStats(req, res) {
     try {
+        console.log('=== GET COMBINED DEFECTIVE ITEMS STATS ===');
         const { userId } = req.params;
+        console.log('Fetching combined defective items stats for admin userId:', userId);
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
         if (adminCheck.rows?.[0]?.role !== 'admin') {
+            console.log('Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
-        // Get all inspections with defective items
+        // Get all inspections with defective items or truck/trailer items
         const inspections = await sql`
-            SELECT defective_items 
+            SELECT defective_items, truck_trailer_items
             FROM vehicle_inspections 
-            WHERE defective_items IS NOT NULL 
-            AND defective_items != '{}' 
-            AND defective_items != 'null'
+            WHERE (defective_items IS NOT NULL AND defective_items != '{}' AND defective_items != 'null' AND defective_items != '')
+            OR (truck_trailer_items IS NOT NULL AND truck_trailer_items != '{}' AND truck_trailer_items != 'null' AND truck_trailer_items != '')
         `;
 
-        // Count frequency of each defective item
-        const itemCounts = {};
+        console.log(`Found ${inspections.rows?.length || 0} inspections with defective items`);
+
+        // Combined count for all items
+        const combinedItemCounts = {};
         
         inspections.rows?.forEach(inspection => {
-            try {
-                const defectiveItems = typeof inspection.defective_items === 'string' 
-                    ? JSON.parse(inspection.defective_items) 
-                    : inspection.defective_items;
-                
-                if (defectiveItems && typeof defectiveItems === 'object') {
-                    Object.entries(defectiveItems).forEach(([itemKey, isSelected]) => {
-                        if (isSelected) {
-                            itemCounts[itemKey] = (itemCounts[itemKey] || 0) + 1;
-                        }
-                    });
+            // Process car defective items
+            if (inspection.defective_items) {
+                try {
+                    let defectiveItems;
+                    
+                    if (typeof inspection.defective_items === 'string') {
+                        defectiveItems = JSON.parse(inspection.defective_items);
+                    } else if (typeof inspection.defective_items === 'object') {
+                        defectiveItems = inspection.defective_items;
+                    }
+                    
+                    if (defectiveItems && typeof defectiveItems === 'object') {
+                        Object.entries(defectiveItems).forEach(([itemKey, isSelected]) => {
+                            if (isSelected === true || isSelected === 'true') {
+                                combinedItemCounts[itemKey] = (combinedItemCounts[itemKey] || 0) + 1;
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error parsing defective items:', error);
                 }
-            } catch (error) {
-                console.error('Error parsing defective items:', error);
+            }
+
+            // Process truck/trailer items
+            if (inspection.truck_trailer_items) {
+                try {
+                    let truckTrailerItems;
+                    
+                    if (typeof inspection.truck_trailer_items === 'string') {
+                        truckTrailerItems = JSON.parse(inspection.truck_trailer_items);
+                    } else if (typeof inspection.truck_trailer_items === 'object') {
+                        truckTrailerItems = inspection.truck_trailer_items;
+                    }
+                    
+                    if (truckTrailerItems && typeof truckTrailerItems === 'object') {
+                        Object.entries(truckTrailerItems).forEach(([itemKey, isSelected]) => {
+                            if (isSelected === true || isSelected === 'true') {
+                                // Add prefix to distinguish truck/trailer items
+                                const prefixedKey = `trailer_${itemKey}`;
+                                combinedItemCounts[prefixedKey] = (combinedItemCounts[prefixedKey] || 0) + 1;
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error parsing truck trailer items:', error);
+                }
             }
         });
 
-        // Convert to array format for chart
-        const chartData = Object.entries(itemCounts)
-            .map(([itemKey, count]) => ({
-                itemKey,
-                count,
-                // Convert snake_case to readable format
-                label: itemKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-            }))
+        // Convert combined items to array format for chart
+        const combinedChartData = Object.entries(combinedItemCounts)
+            .map(([itemKey, count]) => {
+                // Determine if it's a car or truck/trailer item
+                const isTrailerItem = itemKey.startsWith('trailer_');
+                const cleanKey = isTrailerItem ? itemKey.replace('trailer_', '') : itemKey;
+                
+                return {
+                    itemKey: cleanKey,
+                    originalKey: itemKey,
+                    count,
+                    type: isTrailerItem ? 'truck/trailer' : 'car',
+                    label: cleanKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                };
+            })
             .sort((a, b) => b.count - a.count); // Sort by frequency
 
-        res.status(200).json(chartData);
+        console.log('Combined chart data:', combinedChartData);
+        
+        res.status(200).json(combinedChartData);
     } catch (error) {
-        console.error("Error getting defective items stats:", error);
-        res.status(500).json({ error: "Internal server error" });
+        console.error("Error getting combined defective items stats:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
     }
 }
 
-// Check if user is admin
+// ... rest of your existing functions remain the same
 export async function checkAdminStatus(req, res) {
     try {
         const { userId } = req.params;
@@ -75,7 +119,6 @@ export async function checkAdminStatus(req, res) {
     }
 }
 
-// Get all inspections for admin
 export async function getAllInspections(req, res) {
     try {
         const { userId } = req.params;
@@ -100,7 +143,6 @@ export async function getAllInspections(req, res) {
     }
 }
 
-// Update inspection (admin only)
 export async function updateInspection(req, res) {
     try {
         console.log('=== ADMIN UPDATE INSPECTION REQUEST ===');
@@ -119,8 +161,6 @@ export async function updateInspection(req, res) {
         console.log('Checking admin status for user:', adminUserId);
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
         console.log('Admin check result:', adminCheck);
-        console.log('Admin check rows:', adminCheck.rows);
-        console.log('Admin role:', adminCheck.rows?.[0]?.role);
         
         if (adminCheck.rows?.[0]?.role !== 'admin') {
             console.log('❌ Access denied - not admin');
@@ -145,7 +185,7 @@ export async function updateInspection(req, res) {
         const current = currentInspection.rows[0];
         console.log('Current inspection data:', current);
         
-        // Update with new values or keep existing ones (REMOVED updated_at)
+        // Update with new values or keep existing ones
         const result = await sql`
             UPDATE vehicle_inspections 
             SET 
@@ -181,7 +221,6 @@ export async function updateInspection(req, res) {
     }
 }
 
-// Delete inspection (admin only)
 export async function adminDeleteInspection(req, res) {
     try {
         const { id } = req.params;
@@ -208,7 +247,6 @@ export async function adminDeleteInspection(req, res) {
     }
 }
 
-// Get inspection statistics
 export async function getInspectionStats(req, res) {
     try {
         const { userId } = req.params;
