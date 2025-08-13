@@ -8,7 +8,8 @@ export async function getDefectiveItemsStats(req, res) {
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             console.log('Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
@@ -17,25 +18,41 @@ export async function getDefectiveItemsStats(req, res) {
         const inspections = await sql`
             SELECT defective_items, truck_trailer_items
             FROM vehicle_inspections 
-            WHERE (defective_items IS NOT NULL AND defective_items != '{}' AND defective_items != 'null' AND defective_items != '')
-            OR (truck_trailer_items IS NOT NULL AND truck_trailer_items != '{}' AND truck_trailer_items != 'null' AND truck_trailer_items != '')
+            WHERE (defective_items IS NOT NULL AND defective_items != '')
+            OR (truck_trailer_items IS NOT NULL AND truck_trailer_items != '')
         `;
 
-        console.log(`Found ${inspections.rows?.length || 0} inspections with defective items`);
+        const inspectionResults = inspections.rows || inspections;
+        console.log(`Found ${inspectionResults.length} inspections with defective items`);
 
         // Combined count for all items
         const combinedItemCounts = {};
         
-        inspections.rows?.forEach(inspection => {
+        inspectionResults.forEach((inspection, index) => {
+            console.log(`Processing inspection ${index + 1}:`, {
+                defective_items: typeof inspection.defective_items,
+                truck_trailer_items: typeof inspection.truck_trailer_items
+            });
+
             // Process car defective items
             if (inspection.defective_items) {
                 try {
                     let defectiveItems;
                     
                     if (typeof inspection.defective_items === 'string') {
-                        defectiveItems = JSON.parse(inspection.defective_items);
-                    } else if (typeof inspection.defective_items === 'object') {
+                        // Handle string JSON
+                        if (inspection.defective_items.trim() === '' || 
+                            inspection.defective_items === '{}' || 
+                            inspection.defective_items === 'null') {
+                            defectiveItems = {};
+                        } else {
+                            defectiveItems = JSON.parse(inspection.defective_items);
+                        }
+                    } else if (typeof inspection.defective_items === 'object' && inspection.defective_items !== null) {
+                        // Already an object
                         defectiveItems = inspection.defective_items;
+                    } else {
+                        defectiveItems = {};
                     }
                     
                     if (defectiveItems && typeof defectiveItems === 'object') {
@@ -46,7 +63,8 @@ export async function getDefectiveItemsStats(req, res) {
                         });
                     }
                 } catch (error) {
-                    console.error('Error parsing defective items:', error);
+                    console.error('Error parsing defective items for inspection:', inspection, error);
+                    // Continue processing other inspections
                 }
             }
 
@@ -56,9 +74,19 @@ export async function getDefectiveItemsStats(req, res) {
                     let truckTrailerItems;
                     
                     if (typeof inspection.truck_trailer_items === 'string') {
-                        truckTrailerItems = JSON.parse(inspection.truck_trailer_items);
-                    } else if (typeof inspection.truck_trailer_items === 'object') {
+                        // Handle string JSON
+                        if (inspection.truck_trailer_items.trim() === '' || 
+                            inspection.truck_trailer_items === '{}' || 
+                            inspection.truck_trailer_items === 'null') {
+                            truckTrailerItems = {};
+                        } else {
+                            truckTrailerItems = JSON.parse(inspection.truck_trailer_items);
+                        }
+                    } else if (typeof inspection.truck_trailer_items === 'object' && inspection.truck_trailer_items !== null) {
+                        // Already an object
                         truckTrailerItems = inspection.truck_trailer_items;
+                    } else {
+                        truckTrailerItems = {};
                     }
                     
                     if (truckTrailerItems && typeof truckTrailerItems === 'object') {
@@ -71,7 +99,8 @@ export async function getDefectiveItemsStats(req, res) {
                         });
                     }
                 } catch (error) {
-                    console.error('Error parsing truck trailer items:', error);
+                    console.error('Error parsing truck trailer items for inspection:', inspection, error);
+                    // Continue processing other inspections
                 }
             }
         });
@@ -102,7 +131,6 @@ export async function getDefectiveItemsStats(req, res) {
     }
 }
 
-// ... rest of your existing functions remain the same
 export async function checkAdminStatus(req, res) {
     try {
         const { userId } = req.params;
@@ -111,7 +139,8 @@ export async function checkAdminStatus(req, res) {
             SELECT role FROM users WHERE id = ${userId}
         `;
         
-        const isAdmin = result.rows?.[0]?.role === 'admin';
+        const resultRows = result.rows || result;
+        const isAdmin = resultRows[0]?.role === 'admin';
         res.status(200).json({ isAdmin });
     } catch (error) {
         console.error("Error checking admin status:", error);
@@ -125,7 +154,8 @@ export async function getAllInspections(req, res) {
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
         
@@ -136,7 +166,8 @@ export async function getAllInspections(req, res) {
             ORDER BY vi.created_at DESC
         `;
         
-        res.status(200).json(inspections.rows || inspections);
+        const inspectionResults = inspections.rows || inspections;
+        res.status(200).json(inspectionResults);
     } catch (error) {
         console.error("Error fetching all inspections:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -160,9 +191,9 @@ export async function updateInspection(req, res) {
         // Verify admin status
         console.log('Checking admin status for user:', adminUserId);
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
-        console.log('Admin check result:', adminCheck);
+        const adminResult = adminCheck.rows || adminCheck;
         
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             console.log('❌ Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
@@ -175,14 +206,14 @@ export async function updateInspection(req, res) {
             SELECT * FROM vehicle_inspections WHERE id = ${id}
         `;
         
-        console.log('Current inspection query result:', currentInspection);
+        const currentResult = currentInspection.rows || currentInspection;
         
-        if (!currentInspection.rows || currentInspection.rows.length === 0) {
+        if (!currentResult || currentResult.length === 0) {
             console.log('❌ Inspection not found');
             return res.status(404).json({ error: "Inspection not found" });
         }
         
-        const current = currentInspection.rows[0];
+        const current = currentResult[0];
         console.log('Current inspection data:', current);
         
         // Update with new values or keep existing ones
@@ -207,12 +238,13 @@ export async function updateInspection(req, res) {
             RETURNING *
         `;
         
-        console.log('Update result:', result);
+        const updateResult = result.rows || result;
+        console.log('Update result:', updateResult);
         console.log('✅ Inspection updated successfully');
         
         res.status(200).json({ 
             message: "Inspection updated successfully", 
-            inspection: result.rows?.[0] || result[0]
+            inspection: updateResult[0]
         });
         
     } catch (error) {
@@ -228,7 +260,8 @@ export async function adminDeleteInspection(req, res) {
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
@@ -236,7 +269,8 @@ export async function adminDeleteInspection(req, res) {
             DELETE FROM vehicle_inspections WHERE id = ${id} RETURNING *
         `;
 
-        if (result.rows?.length === 0) {
+        const deleteResult = result.rows || result;
+        if (!deleteResult || deleteResult.length === 0) {
             return res.status(404).json({ error: "Inspection not found" });
         }
 
@@ -253,7 +287,8 @@ export async function getInspectionStats(req, res) {
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
@@ -268,7 +303,8 @@ export async function getInspectionStats(req, res) {
             FROM vehicle_inspections
         `;
 
-        res.status(200).json(stats.rows?.[0] || stats[0]);
+        const statsResult = stats.rows || stats;
+        res.status(200).json(statsResult[0]);
     } catch (error) {
         console.error("Error getting inspection stats:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -282,7 +318,8 @@ export async function getAdminSingleInspection(req, res) {
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
-        if (adminCheck.rows?.[0]?.role !== 'admin') {
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
         
@@ -293,11 +330,12 @@ export async function getAdminSingleInspection(req, res) {
             WHERE vi.id = ${id}
         `;
         
-        if (result.rows?.length === 0) {
+        const inspectionResult = result.rows || result;
+        if (!inspectionResult || inspectionResult.length === 0) {
             return res.status(404).json({ error: "Inspection not found" });
         }
         
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(inspectionResult[0]);
     } catch (error) {
         console.error("Error fetching single inspection:", error);
         res.status(500).json({ error: "Internal server error" });
