@@ -16,7 +16,7 @@ export async function getDefectiveItemsStats(req, res) {
 
         // Get all inspections - we'll filter the data processing instead of in SQL
         const inspections = await sql`
-            SELECT defective_items, truck_trailer_items
+            SELECT id, defective_items, truck_trailer_items
             FROM vehicle_inspections 
             ORDER BY created_at DESC
         `;
@@ -24,19 +24,22 @@ export async function getDefectiveItemsStats(req, res) {
         const inspectionResults = inspections.rows || inspections;
         console.log(`Found ${inspectionResults.length} total inspections`);
 
-        // Combined count for all items
-        const combinedItemCounts = {};
-        let processedCount = 0;
+        // Separate counts for car items and truck/trailer items
+        const carItemCounts = {};
+        const truckTrailerItemCounts = {};
+        let processedCarCount = 0;
+        let processedTruckCount = 0;
         let errorCount = 0;
         
         inspectionResults.forEach((inspection, index) => {
-            let hasDefectiveItems = false;
-            let hasTruckTrailerItems = false;
-
+            console.log(`\n--- Processing Inspection ${inspection.id} (${index + 1}/${inspectionResults.length}) ---`);
+            
             // Process car defective items
             if (inspection.defective_items) {
                 try {
                     let defectiveItems = null;
+                    
+                    console.log('Raw defective_items:', typeof inspection.defective_items, inspection.defective_items);
                     
                     // Handle different data types
                     if (typeof inspection.defective_items === 'string') {
@@ -49,16 +52,23 @@ export async function getDefectiveItemsStats(req, res) {
                     }
                     
                     if (defectiveItems && typeof defectiveItems === 'object') {
+                        console.log('Parsed defective_items:', defectiveItems);
+                        let foundCarItems = false;
+                        
                         Object.entries(defectiveItems).forEach(([itemKey, isSelected]) => {
+                            console.log(`Car item: ${itemKey} = ${isSelected} (${typeof isSelected})`);
                             // Only count true values (not false)
                             if (isSelected === true || isSelected === 'true' || isSelected === 1) {
-                                combinedItemCounts[itemKey] = (combinedItemCounts[itemKey] || 0) + 1;
-                                hasDefectiveItems = true;
+                                carItemCounts[itemKey] = (carItemCounts[itemKey] || 0) + 1;
+                                foundCarItems = true;
+                                console.log(`✅ Counted car item: ${itemKey}, total: ${carItemCounts[itemKey]}`);
                             }
                         });
+                        
+                        if (foundCarItems) processedCarCount++;
                     }
                 } catch (error) {
-                    console.error(`Error parsing defective items for inspection ${index}:`, error.message);
+                    console.error(`❌ Error parsing defective items for inspection ${inspection.id}:`, error.message);
                     errorCount++;
                 }
             }
@@ -67,6 +77,8 @@ export async function getDefectiveItemsStats(req, res) {
             if (inspection.truck_trailer_items) {
                 try {
                     let truckTrailerItems = null;
+                    
+                    console.log('Raw truck_trailer_items:', typeof inspection.truck_trailer_items, inspection.truck_trailer_items);
                     
                     // Handle different data types
                     if (typeof inspection.truck_trailer_items === 'string') {
@@ -79,53 +91,71 @@ export async function getDefectiveItemsStats(req, res) {
                     }
                     
                     if (truckTrailerItems && typeof truckTrailerItems === 'object') {
+                        console.log('Parsed truck_trailer_items:', truckTrailerItems);
+                        let foundTruckItems = false;
+                        
                         Object.entries(truckTrailerItems).forEach(([itemKey, isSelected]) => {
+                            console.log(`Truck item: ${itemKey} = ${isSelected} (${typeof isSelected})`);
                             // Only count true values (not false)
                             if (isSelected === true || isSelected === 'true' || isSelected === 1) {
-                                // Add prefix to distinguish truck/trailer items
-                                const prefixedKey = `trailer_${itemKey}`;
-                                combinedItemCounts[prefixedKey] = (combinedItemCounts[prefixedKey] || 0) + 1;
-                                hasTruckTrailerItems = true;
+                                // Don't add prefix, keep original item key
+                                truckTrailerItemCounts[itemKey] = (truckTrailerItemCounts[itemKey] || 0) + 1;
+                                foundTruckItems = true;
+                                console.log(`✅ Counted truck item: ${itemKey}, total: ${truckTrailerItemCounts[itemKey]}`);
                             }
                         });
+                        
+                        if (foundTruckItems) processedTruckCount++;
                     }
                 } catch (error) {
-                    console.error(`Error parsing truck trailer items for inspection ${index}:`, error.message);
+                    console.error(`❌ Error parsing truck trailer items for inspection ${inspection.id}:`, error.message);
                     errorCount++;
                 }
             }
-
-            if (hasDefectiveItems || hasTruckTrailerItems) {
-                processedCount++;
-            }
         });
 
-        console.log(`Processed ${processedCount} inspections with defective items, ${errorCount} errors`);
-        console.log('Combined item counts:', combinedItemCounts);
+        console.log(`\n=== PROCESSING SUMMARY ===`);
+        console.log(`Processed ${processedCarCount} inspections with car defective items`);
+        console.log(`Processed ${processedTruckCount} inspections with truck/trailer items`);
+        console.log(`Errors: ${errorCount}`);
+        console.log('Final car item counts:', carItemCounts);
+        console.log('Final truck/trailer item counts:', truckTrailerItemCounts);
 
-        // Convert combined items to array format for chart
-        const combinedChartData = Object.entries(combinedItemCounts)
-            .map(([itemKey, count]) => {
-                // Determine if it's a car or truck/trailer item
-                const isTrailerItem = itemKey.startsWith('trailer_');
-                const cleanKey = isTrailerItem ? itemKey.replace('trailer_', '') : itemKey;
-                
-                return {
-                    itemKey: cleanKey,
-                    originalKey: itemKey,
-                    count,
-                    type: isTrailerItem ? 'truck/trailer' : 'car',
-                    label: cleanKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                };
-            })
+        // Convert car items to array format
+        const carChartData = Object.entries(carItemCounts)
+            .map(([itemKey, count]) => ({
+                itemKey,
+                count,
+                type: 'car',
+                label: itemKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            }));
+
+        // Convert truck/trailer items to array format
+        const truckTrailerChartData = Object.entries(truckTrailerItemCounts)
+            .map(([itemKey, count]) => ({
+                itemKey,
+                count,
+                type: 'truck/trailer',
+                label: itemKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            }));
+
+        console.log('Car chart data:', carChartData);
+        console.log('Truck/trailer chart data:', truckTrailerChartData);
+
+        // Combine both arrays and sort by frequency
+        const combinedChartData = [...carChartData, ...truckTrailerChartData]
             .filter(item => item.count > 0) // Only include items with actual counts
             .sort((a, b) => b.count - a.count); // Sort by frequency
 
-        console.log(`Returning ${combinedChartData.length} chart items`);
+        console.log(`\n=== FINAL RESULT ===`);
+        console.log(`Returning ${combinedChartData.length} chart items:`);
+        combinedChartData.forEach(item => {
+            console.log(`- ${item.label} (${item.type}): ${item.count} occurrences`);
+        });
         
         res.status(200).json(combinedChartData);
     } catch (error) {
-        console.error("Error getting combined defective items stats:", error);
+        console.error("❌ Error getting combined defective items stats:", error);
         res.status(500).json({ error: "Internal server error: " + error.message });
     }
 }
