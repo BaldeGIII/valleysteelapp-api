@@ -4,24 +4,56 @@ export async function getAllUsers(req, res) {
     try {
         const { userId } = req.params;
         
-        // Verify admin status
-        const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
+        console.log('=== GET ALL USERS REQUEST ===');
+        console.log('Requesting user ID:', userId);
+        
+        // Verify admin status with detailed logging
+        console.log('Checking admin status...');
+        const adminCheck = await sql`SELECT id, email, role FROM users WHERE id = ${userId}`;
         const adminResult = adminCheck.rows || adminCheck;
-        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+        
+        console.log('Admin check result:', adminResult);
+        console.log('Admin result length:', adminResult.length);
+        
+        if (!adminResult || adminResult.length === 0) {
+            console.log('❌ User not found in database');
+            return res.status(403).json({ error: "User not found in database" });
+        }
+        
+        const adminUser = adminResult[0];
+        console.log('Found user:', adminUser);
+        console.log('User role:', adminUser.role);
+        
+        if (adminUser.role !== 'admin') {
+            console.log('❌ User is not admin, role is:', adminUser.role);
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
         
+        console.log('✅ Admin verified, fetching all users...');
+        
+        // Get all users with inspection counts
         const users = await sql`
-            SELECT id, email, role, created_at 
-            FROM users 
-            ORDER BY created_at DESC
+            SELECT 
+                u.id, 
+                u.email, 
+                u.role, 
+                u.created_at,
+                COUNT(i.id) as inspection_count
+            FROM users u
+            LEFT JOIN vehicle_inspections i ON u.id = i.user_id
+            GROUP BY u.id, u.email, u.role, u.created_at
+            ORDER BY u.created_at DESC
         `;
         
         const userResults = users.rows || users;
+        console.log('Found users:', userResults.length);
+        console.log('Users data:', userResults);
+        
         res.status(200).json(userResults);
+        
     } catch (error) {
-        console.error("Error fetching users:", error);
-        res.status(500).json({ error: "Internal server error" });
+        console.error("❌ Error fetching users:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
     }
 }
 
