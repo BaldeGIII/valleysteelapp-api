@@ -7,9 +7,9 @@ import {
     getInspectionStats, 
     getDefectiveItemsStats,
     getAdminSingleInspection,
-    getAllUsers,          // Add this
-    updateUserRole,       // Add this
-    promoteUserToAdmin    // Add this
+    getAllUsers,          
+    updateUserRole,       
+    promoteUserToAdmin    
 } from "../controllers/adminController.js";
 
 const router = express.Router();
