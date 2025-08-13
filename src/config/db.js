@@ -13,35 +13,27 @@ async function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;
 
-        // RESTORE YOUR ADMIN ACCESS - Multiple approaches to ensure it works
+        // Update your existing account to admin
         const yourClerkUserId = "user_30yBMfBIYMUv07iT9jOhhVqsfxN";
         const yourEmail = "baldemarguajardo20@gmail.com";
         
-        console.log('🔧 Restoring admin access...');
+        // Check if user exists by email first
+        const existingUser = await sql`SELECT id, email, role FROM users WHERE email = ${yourEmail}`;
         
-        // First, delete any conflicting records to start fresh
-        await sql`DELETE FROM users WHERE email = ${yourEmail}`;
-        await sql`DELETE FROM users WHERE id = ${yourClerkUserId}`;
-        
-        // Now insert your admin record fresh
-        await sql`INSERT INTO users (id, email, role) 
-                  VALUES (${yourClerkUserId}, ${yourEmail}, 'admin')
-                  ON CONFLICT (id) DO UPDATE SET 
-                  email = EXCLUDED.email, 
-                  role = 'admin'`;
-        
-        // Also add a backup record with just email as ID (in case Clerk ID is different)
-        await sql`INSERT INTO users (id, email, role) 
-                  VALUES (${yourEmail}, ${yourEmail}, 'admin')
-                  ON CONFLICT (id) DO UPDATE SET 
-                  role = 'admin'`;
-        
-        console.log(`✅ Admin access restored for ${yourEmail}`);
-        console.log(`✅ Clerk ID: ${yourClerkUserId}`);
-        
-        // Verify the admin was created
-        const adminCheck = await sql`SELECT id, email, role FROM users WHERE email = ${yourEmail} OR id = ${yourClerkUserId}`;
-        console.log('📋 Admin users found:', adminCheck.rows || adminCheck);
+        if (existingUser.rows && existingUser.rows.length > 0) {
+            // User exists with this email, update their role to admin
+            await sql`UPDATE users SET role = 'admin' WHERE email = ${yourEmail}`;
+            console.log(`Updated existing user ${yourEmail} to admin role.`);
+        } else {
+            // User doesn't exist, create new admin user
+            await sql`INSERT INTO users (id, email, role) 
+                      VALUES (${yourClerkUserId}, ${yourEmail}, 'admin')`;
+            console.log(`Created new admin user ${yourEmail}.`);
+        }
+
+        // Also handle the case where the Clerk ID might be different
+        // Update the user ID if needed
+        await sql`UPDATE users SET id = ${yourClerkUserId} WHERE email = ${yourEmail} AND id != ${yourClerkUserId}`;
 
         // Create vehicle_inspections table
         await sql`CREATE TABLE IF NOT EXISTS vehicle_inspections (
@@ -66,31 +58,10 @@ async function initDB() {
             updated_by VARCHAR(255)
         )`;
 
-        console.log("✅ Database initialized successfully.");
+        console.log("Database initialized successfully.");
     } catch (error) {
-        console.error("❌ Error initializing database:", error);
-        
-        // Emergency admin restore - try alternative methods
-        try {
-            console.log('🚨 Emergency admin restore...');
-            const yourEmail = "baldemarguajardo20@gmail.com";
-            
-            // Try to find any existing user with this email
-            const existingUsers = await sql`SELECT * FROM users WHERE email ILIKE ${yourEmail}`;
-            console.log('Found existing users:', existingUsers.rows || existingUsers);
-            
-            // Force update any user with this email to admin
-            await sql`UPDATE users SET role = 'admin' WHERE email ILIKE ${yourEmail}`;
-            
-            // Also try with the Clerk ID
-            await sql`UPDATE users SET role = 'admin' WHERE id = 'user_30yBMfBIYMUv07iT9jOhhVqsfxN'`;
-            
-            console.log('🆘 Emergency admin restore attempted');
-        } catch (emergencyError) {
-            console.error('❌ Emergency restore failed:', emergencyError);
-        }
-        
-        // Don't exit the process, let it continue
+        console.error("Error initializing database:", error);
+        process.exit(1);
     }
 }
 
