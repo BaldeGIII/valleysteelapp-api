@@ -44,6 +44,20 @@ export async function createInspection(req, res){
             return res.status(400).json({ error: "User ID and vehicle are required" });
         }
 
+        // 🔧 ENSURE USER EXISTS WITH PROPER EMAIL
+        try {
+            // Try to get the user's email from Clerk (you might need to pass this from the frontend)
+            // For now, let's ensure the user exists with their Clerk ID
+            await sql`
+                INSERT INTO users (id, email, role) 
+                VALUES (${user_id}, ${user_id}, 'user')
+                ON CONFLICT (id) DO NOTHING
+            `;
+            console.log('✅ Ensured user exists in database');
+        } catch (userInsertError) {
+            console.log('⚠️ User creation/check failed:', userInsertError);
+        }
+
         const inspection = await sql`
             INSERT INTO vehicle_inspections (
                 user_id, location, date, time, vehicle, speedometer_reading,
@@ -61,7 +75,8 @@ export async function createInspection(req, res){
             RETURNING *
         `
         
-        res.status(201).json(inspection[0]);
+        const inspectionResult = inspection.rows || inspection;
+        res.status(201).json(inspectionResult[0]);
 
     } catch (error) {
         console.error("Error creating inspection:", error);
