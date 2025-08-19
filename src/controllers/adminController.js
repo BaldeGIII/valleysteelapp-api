@@ -139,104 +139,28 @@ export async function promoteUserToAdmin(req, res) {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
         
-        // Try multiple approaches to find the user
-        console.log('🔍 Searching for user with multiple methods...');
-        
-        // Method 1: Find by exact email match
-        let userCheck = await sql`SELECT id, email, role FROM users WHERE email = ${userEmail}`;
-        let userResult = userCheck.rows || userCheck;
-        console.log('Method 1 - Exact email match:', userResult);
-        
-        // Method 2: Find by case-insensitive email match
+        // Find user by email
+        const userCheck = await sql`SELECT id, email, role FROM users WHERE email = ${userEmail}`;
+        const userResult = userCheck.rows || userCheck;
         if (!userResult || userResult.length === 0) {
-            userCheck = await sql`SELECT id, email, role FROM users WHERE LOWER(email) = LOWER(${userEmail})`;
-            userResult = userCheck.rows || userCheck;
-            console.log('Method 2 - Case-insensitive email match:', userResult);
-        }
-        
-        // Method 3: Find by ID that matches email (sometimes Clerk ID is used as both ID and email)
-        if (!userResult || userResult.length === 0) {
-            userCheck = await sql`SELECT id, email, role FROM users WHERE id = ${userEmail}`;
-            userResult = userCheck.rows || userCheck;
-            console.log('Method 3 - ID matches email:', userResult);
-        }
-        
-        // Method 4: Find by partial email match (in case there are formatting differences)
-        if (!userResult || userResult.length === 0) {
-            userCheck = await sql`SELECT id, email, role FROM users WHERE email ILIKE ${'%' + userEmail + '%'}`;
-            userResult = userCheck.rows || userCheck;
-            console.log('Method 4 - Partial email match:', userResult);
-        }
-        
-        // If still not found, create a new user record
-        if (!userResult || userResult.length === 0) {
-            console.log('❌ User not found in database, creating new record...');
-            
-            try {
-                // Generate a temporary user ID based on email
-                const tempUserId = userEmail.split('@')[0] + '_' + Date.now();
-                
-                // Insert new user with email and admin role
-                const insertResult = await sql`
-                    INSERT INTO users (id, email, role) 
-                    VALUES (${tempUserId}, ${userEmail}, 'admin')
-                    RETURNING id, email, role
-                `;
-                
-                userResult = insertResult.rows || [insertResult];
-                console.log('✅ Created new admin user record:', userResult[0]);
-                
-                res.status(200).json({ 
-                    message: `User ${userEmail} has been created and promoted to admin. They will have admin access when they first log in.`, 
-                    user: userResult[0]
-                });
-                return;
-                
-            } catch (insertError) {
-                console.error('❌ Error creating user record:', insertError);
-                return res.status(500).json({ 
-                    error: "Failed to create user record: " + insertError.message 
-                });
-            }
+            return res.status(404).json({ error: "User not found with that email address" });
         }
         
         const targetUser = userResult[0];
-        console.log('Found target user:', targetUser);
         
         if (targetUser.role === 'admin') {
             return res.status(400).json({ error: "User is already an admin" });
         }
         
-        // Promote existing user to admin - use multiple update methods
-        console.log('📝 Promoting user to admin...');
-        
-        let updateResult;
-        
-        // Try updating by ID first
-        try {
-            updateResult = await sql`
-                UPDATE users 
-                SET role = 'admin'
-                WHERE id = ${targetUser.id}
-                RETURNING id, email, role
-            `;
-        } catch (updateError) {
-            console.log('Update by ID failed, trying by email...');
-            // Try updating by email as fallback
-            updateResult = await sql`
-                UPDATE users 
-                SET role = 'admin'
-                WHERE email = ${userEmail} OR LOWER(email) = LOWER(${userEmail})
-                RETURNING id, email, role
-            `;
-        }
+        // Promote user to admin
+        const updateResult = await sql`
+            UPDATE users 
+            SET role = 'admin'
+            WHERE email = ${userEmail}
+            RETURNING id, email, role
+        `;
         
         const updatedUser = updateResult.rows?.[0] || updateResult[0];
-        
-        if (!updatedUser) {
-            console.error('❌ Failed to update user role');
-            return res.status(500).json({ error: "Failed to update user role" });
-        }
         
         console.log('✅ User promoted to admin:', updatedUser);
         
@@ -251,140 +175,163 @@ export async function promoteUserToAdmin(req, res) {
     }
 }
 
-// Add this function to your adminController.js
 export async function getDefectiveItemsStats(req, res) {
     try {
+        console.log('=== GET COMBINED DEFECTIVE ITEMS STATS ===');
         const { userId } = req.params;
-        
-        console.log('=== GET DEFECTIVE ITEMS STATS ===');
-        console.log('Admin user:', userId);
+        console.log('Fetching combined defective items stats for admin userId:', userId);
         
         // Verify admin status
         const adminCheck = await sql`SELECT role FROM users WHERE id = ${userId}`;
         const adminResult = adminCheck.rows || adminCheck;
         if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+            console.log('Access denied - not admin');
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
-        
-        // Get all inspections with defective items
+
+        // Get all inspections - we'll filter the data processing instead of in SQL
         const inspections = await sql`
-            SELECT 
-                defective_items,
-                truck_trailer_items
+            SELECT id, defective_items, truck_trailer_items
             FROM vehicle_inspections 
-            WHERE (defective_items IS NOT NULL AND defective_items != '[]') 
-               OR (truck_trailer_items IS NOT NULL AND truck_trailer_items != '[]')
+            ORDER BY created_at DESC
         `;
-        
+
         const inspectionResults = inspections.rows || inspections;
+        console.log(`Found ${inspectionResults.length} total inspections`);
+
+        // Separate counts for car items and truck/trailer items
+        const carItemCounts = {};
+        const truckTrailerItemCounts = {};
+        let processedCarCount = 0;
+        let processedTruckCount = 0;
+        let errorCount = 0;
         
-        // Process defective items statistics
-        const itemCounts = {};
-        
-        inspectionResults.forEach(inspection => {
+        inspectionResults.forEach((inspection, index) => {
+            console.log(`\n--- Processing Inspection ${inspection.id} (${index + 1}/${inspectionResults.length}) ---`);
+            
             // Process car defective items
             if (inspection.defective_items) {
-                let carItems = [];
                 try {
-                    carItems = typeof inspection.defective_items === 'string' 
-                        ? JSON.parse(inspection.defective_items) 
-                        : inspection.defective_items;
-                } catch (e) {
-                    console.log('Error parsing car defective items:', e);
-                }
-                
-                if (Array.isArray(carItems)) {
-                    carItems.forEach(item => {
-                        const key = `${item}_car`;
-                        itemCounts[key] = (itemCounts[key] || 0) + 1;
-                    });
+                    let defectiveItems = null;
+                    
+                    console.log('Raw defective_items:', typeof inspection.defective_items, inspection.defective_items);
+                    
+                    // Handle different data types
+                    if (typeof inspection.defective_items === 'string') {
+                        const trimmed = inspection.defective_items.trim();
+                        if (trimmed && trimmed !== '{}' && trimmed !== 'null' && trimmed !== 'undefined') {
+                            defectiveItems = JSON.parse(trimmed);
+                        }
+                    } else if (typeof inspection.defective_items === 'object' && inspection.defective_items !== null) {
+                        defectiveItems = inspection.defective_items;
+                    }
+                    
+                    if (defectiveItems && typeof defectiveItems === 'object') {
+                        console.log('Parsed defective_items:', defectiveItems);
+                        let foundCarItems = false;
+                        
+                        Object.entries(defectiveItems).forEach(([itemKey, isSelected]) => {
+                            console.log(`Car item: ${itemKey} = ${isSelected} (${typeof isSelected})`);
+                            // Only count true values (not false)
+                            if (isSelected === true || isSelected === 'true' || isSelected === 1) {
+                                carItemCounts[itemKey] = (carItemCounts[itemKey] || 0) + 1;
+                                foundCarItems = true;
+                                console.log(`✅ Counted car item: ${itemKey}, total: ${carItemCounts[itemKey]}`);
+                            }
+                        });
+                        
+                        if (foundCarItems) processedCarCount++;
+                    }
+                } catch (error) {
+                    console.error(`❌ Error parsing defective items for inspection ${inspection.id}:`, error.message);
+                    errorCount++;
                 }
             }
-            
-            // Process truck/trailer defective items
+
+            // Process truck/trailer items
             if (inspection.truck_trailer_items) {
-                let truckItems = [];
                 try {
-                    truckItems = typeof inspection.truck_trailer_items === 'string' 
-                        ? JSON.parse(inspection.truck_trailer_items) 
-                        : inspection.truck_trailer_items;
-                } catch (e) {
-                    console.log('Error parsing truck/trailer defective items:', e);
-                }
-                
-                if (Array.isArray(truckItems)) {
-                    truckItems.forEach(item => {
-                        const key = `${item}_truck`;
-                        itemCounts[key] = (itemCounts[key] || 0) + 1;
-                    });
+                    let truckTrailerItems = null;
+                    
+                    console.log('Raw truck_trailer_items:', typeof inspection.truck_trailer_items, inspection.truck_trailer_items);
+                    
+                    // Handle different data types
+                    if (typeof inspection.truck_trailer_items === 'string') {
+                        const trimmed = inspection.truck_trailer_items.trim();
+                        if (trimmed && trimmed !== '{}' && trimmed !== 'null' && trimmed !== 'undefined') {
+                            truckTrailerItems = JSON.parse(trimmed);
+                        }
+                    } else if (typeof inspection.truck_trailer_items === 'object' && inspection.truck_trailer_items !== null) {
+                        truckTrailerItems = inspection.truck_trailer_items;
+                    }
+                    
+                    if (truckTrailerItems && typeof truckTrailerItems === 'object') {
+                        console.log('Parsed truck_trailer_items:', truckTrailerItems);
+                        let foundTruckItems = false;
+                        
+                        Object.entries(truckTrailerItems).forEach(([itemKey, isSelected]) => {
+                            console.log(`Truck item: ${itemKey} = ${isSelected} (${typeof isSelected})`);
+                            // Only count true values (not false)
+                            if (isSelected === true || isSelected === 'true' || isSelected === 1) {
+                                // Don't add prefix, keep original item key
+                                truckTrailerItemCounts[itemKey] = (truckTrailerItemCounts[itemKey] || 0) + 1;
+                                foundTruckItems = true;
+                                console.log(`✅ Counted truck item: ${itemKey}, total: ${truckTrailerItemCounts[itemKey]}`);
+                            }
+                        });
+                        
+                        if (foundTruckItems) processedTruckCount++;
+                    }
+                } catch (error) {
+                    console.error(`❌ Error parsing truck trailer items for inspection ${inspection.id}:`, error.message);
+                    errorCount++;
                 }
             }
         });
-        
-        // Convert to array and sort by count
-        const statsArray = Object.entries(itemCounts).map(([item, count]) => {
-            const [label, type] = item.split('_');
-            return {
-                label: label,
-                count: count,
-                type: type === 'truck' ? 'truck/trailer' : 'car'
-            };
-        }).sort((a, b) => b.count - a.count);
-        
-        console.log('✅ Defective items stats processed:', statsArray.length, 'items');
-        res.status(200).json(statsArray);
-        
-    } catch (error) {
-        console.error("❌ Error fetching defective items stats:", error);
-        res.status(500).json({ error: "Internal server error: " + error.message });
-    }
-}
 
-// Add this debug function to your adminController.js
-export async function debugUserSearch(req, res) {
-    try {
-        const { userEmail } = req.body;
-        const { adminUserId } = req.body;
+        console.log(`\n=== PROCESSING SUMMARY ===`);
+        console.log(`Processed ${processedCarCount} inspections with car defective items`);
+        console.log(`Processed ${processedTruckCount} inspections with truck/trailer items`);
+        console.log(`Errors: ${errorCount}`);
+        console.log('Final car item counts:', carItemCounts);
+        console.log('Final truck/trailer item counts:', truckTrailerItemCounts);
+
+        // Convert car items to array format
+        const carChartData = Object.entries(carItemCounts)
+            .map(([itemKey, count]) => ({
+                itemKey,
+                count,
+                type: 'car',
+                label: itemKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            }));
+
+        // Convert truck/trailer items to array format
+        const truckTrailerChartData = Object.entries(truckTrailerItemCounts)
+            .map(([itemKey, count]) => ({
+                itemKey,
+                count,
+                type: 'truck/trailer',
+                label: itemKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            }));
+
+        console.log('Car chart data:', carChartData);
+        console.log('Truck/trailer chart data:', truckTrailerChartData);
+
+        // Combine both arrays and sort by frequency
+        const combinedChartData = [...carChartData, ...truckTrailerChartData]
+            .filter(item => item.count > 0) // Only include items with actual counts
+            .sort((a, b) => b.count - a.count); // Sort by frequency
+
+        console.log(`\n=== FINAL RESULT ===`);
+        console.log(`Returning ${combinedChartData.length} chart items:`);
+        combinedChartData.forEach(item => {
+            console.log(`- ${item.label} (${item.type}): ${item.count} occurrences`);
+        });
         
-        console.log('=== DEBUG USER SEARCH ===');
-        console.log('Admin user:', adminUserId);
-        console.log('Target email:', userEmail);
-        
-        // Verify admin status
-        const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
-        const adminResult = adminCheck.rows || adminCheck;
-        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
-            return res.status(403).json({ error: "Access denied. Admin privileges required." });
-        }
-        
-        // Get all users for comparison
-        const allUsers = await sql`SELECT id, email, role, created_at FROM users ORDER BY created_at DESC`;
-        const allUsersResult = allUsers.rows || allUsers;
-        
-        // Try different search methods
-        const exactEmail = await sql`SELECT id, email, role FROM users WHERE email = ${userEmail}`;
-        const caseInsensitive = await sql`SELECT id, email, role FROM users WHERE LOWER(email) = LOWER(${userEmail})`;
-        const byId = await sql`SELECT id, email, role FROM users WHERE id = ${userEmail}`;
-        const partialMatch = await sql`SELECT id, email, role FROM users WHERE email ILIKE ${'%' + userEmail + '%'}`;
-        
-        const debugInfo = {
-            searchEmail: userEmail,
-            totalUsers: allUsersResult.length,
-            allUsers: allUsersResult,
-            searchResults: {
-                exactEmail: exactEmail.rows || exactEmail,
-                caseInsensitive: caseInsensitive.rows || caseInsensitive,
-                byId: byId.rows || byId,
-                partialMatch: partialMatch.rows || partialMatch
-            }
-        };
-        
-        console.log('Debug info:', JSON.stringify(debugInfo, null, 2));
-        res.status(200).json(debugInfo);
-        
+        res.status(200).json(combinedChartData);
     } catch (error) {
-        console.error("Error in debug search:", error);
-        res.status(500).json({ error: error.message });
+        console.error("❌ Error getting combined defective items stats:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
     }
 }
 
