@@ -126,11 +126,19 @@ export async function bootstrapFirstAdmin(req, res) {
         console.log('🔐 BOOTSTRAP FIRST ADMIN ATTEMPT');
         console.log('User ID:', userId);
         console.log('Email:', userEmail);
-        
-        // Security check - require secret key
+        console.log('Received secret key:', secretKey);
+
         const BOOTSTRAP_SECRET = process.env.ADMIN_BOOTSTRAP_SECRET || "VSR_ADMIN_BOOTSTRAP_2024";
+        console.log('Expected secret key:', BOOTSTRAP_SECRET);
+        console.log('Environment variables loaded:', {
+            PORT: process.env.PORT,
+            ADMIN_BOOTSTRAP_SECRET: process.env.ADMIN_BOOTSTRAP_SECRET
+        });
+        
         if (secretKey !== BOOTSTRAP_SECRET) {
-            console.log('❌ Invalid bootstrap secret');
+            console.log('❌ Secret key mismatch!');
+            console.log('Received:', secretKey);
+            console.log('Expected:', BOOTSTRAP_SECRET);
             return res.status(403).json({ error: "Invalid bootstrap secret" });
         }
         
