@@ -109,6 +109,29 @@ export async function createInspection(req, res){
             console.log('⚠️ User creation failed (may already exist):', userError.message);
         }
 
+        // 🔒 SECURITY: Check if user is admin before allowing mechanic signature
+        let finalMechanicSignature = "";
+        if (mechanic_signature && mechanic_signature.trim()) {
+            console.log('🔍 Checking admin status for mechanic signature...');
+            try {
+                const userCheck = await sql`
+                    SELECT role FROM users WHERE id = ${user_id}
+                `;
+                const userData = userCheck.rows?.[0] || userCheck[0];
+                
+                if (userData && userData.role === 'admin') {
+                    finalMechanicSignature = mechanic_signature.trim();
+                    console.log('✅ Admin user - mechanic signature allowed');
+                } else {
+                    console.log('⚠️ Non-admin user - mechanic signature rejected');
+                    // Don't return error, just silently ignore mechanic signature for non-admins
+                }
+            } catch (adminCheckError) {
+                console.error('❌ Error checking admin status:', adminCheckError);
+                // If we can't check admin status, don't allow mechanic signature
+            }
+        }
+
         const inspection = await sql`
             INSERT INTO vehicle_inspections (
                 user_id, location, date, time, vehicle, speedometer_reading,
@@ -121,7 +144,7 @@ export async function createInspection(req, res){
                 ${speedometer_reading}, ${JSON.stringify(defective_items)}, 
                 ${JSON.stringify(truck_trailer_items)}, ${trailer_number}, ${remarks},
                 ${condition_satisfactory}, ${driver_signature}, ${defects_corrected},
-                ${defects_need_correction}, ${mechanic_signature}
+                ${defects_need_correction}, ${finalMechanicSignature}
             )
             RETURNING *
         `
