@@ -215,16 +215,17 @@ export async function promoteUserToAdmin(req, res) {
         `;
         let userResult = userCheck.rows || userCheck;
         
-        // If user doesn't exist, create them with admin role
+        // If user doesn't exist, create them with admin role using a special placeholder ID
         if (!userResult || userResult.length === 0) {
             console.log('📝 User not found, creating new admin user...');
             
-            // Generate a temporary user ID
-            const tempUserId = `temp_admin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            // Create user with email as primary identifier
+            // Use email-based ID that will be updated when they first log in
+            const emailBasedId = `email_${userEmail.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
             
             const insertResult = await sql`
                 INSERT INTO users (id, email, role) 
-                VALUES (${tempUserId}, ${userEmail}, 'admin')
+                VALUES (${emailBasedId}, ${userEmail}, 'admin')
                 RETURNING id, email, role
             `;
             
@@ -684,6 +685,93 @@ export async function updateUserEmailsFromClerk(req, res) {
         
     } catch (error) {
         console.error("❌ Error updating user emails:", error);
+        res.status(500).json({ error: "Internal server error: " + error.message });
+    }
+}
+
+export async function fixDuplicateUsers(req, res) {
+    try {
+        const { adminUserId } = req.body;
+        
+        console.log('=== FIX DUPLICATE USERS ===');
+        console.log('Admin user:', adminUserId);
+        
+        if (!adminUserId) {
+            return res.status(400).json({ error: "Missing admin user ID" });
+        }
+        
+        // Verify admin status
+        const adminCheck = await sql`SELECT role FROM users WHERE id = ${adminUserId}`;
+        const adminResult = adminCheck.rows || adminCheck;
+        if (!adminResult || adminResult.length === 0 || adminResult[0]?.role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        
+        // Find duplicate users by email (where one is email-based ID and another is Clerk ID)
+        const duplicates = await sql`
+            SELECT email, array_agg(id) as user_ids, array_agg(role) as roles
+            FROM users 
+            WHERE email NOT LIKE '%@clerk.user'
+            GROUP BY email 
+            HAVING COUNT(*) > 1
+        `;
+        
+        const duplicateResults = duplicates.rows || duplicates;
+        let fixedCount = 0;
+        const errors = [];
+        
+        for (const duplicate of duplicateResults) {
+            const { email, user_ids, roles } = duplicate;
+            
+            try {
+                // Find which ID is the Clerk ID (starts with 'user_') and which is email-based
+                const clerkId = user_ids.find(id => id.startsWith('user_'));
+                const emailBasedId = user_ids.find(id => id.startsWith('email_'));
+                
+                if (clerkId && emailBasedId) {
+                    console.log(`🔧 Fixing duplicate for ${email}: merging ${emailBasedId} into ${clerkId}`);
+                    
+                    // Get the role from the email-based user (likely admin)
+                    const emailUserIndex = user_ids.indexOf(emailBasedId);
+                    const emailUserRole = roles[emailUserIndex];
+                    
+                    // Update the Clerk user with the role from the email-based user
+                    await sql`
+                        UPDATE users 
+                        SET role = ${emailUserRole}
+                        WHERE id = ${clerkId}
+                    `;
+                    
+                    // Transfer any inspections from email-based ID to Clerk ID
+                    await sql`
+                        UPDATE vehicle_inspections 
+                        SET user_id = ${clerkId}
+                        WHERE user_id = ${emailBasedId}
+                    `;
+                    
+                    // Delete the email-based user record
+                    await sql`
+                        DELETE FROM users 
+                        WHERE id = ${emailBasedId}
+                    `;
+                    
+                    fixedCount++;
+                    console.log(`✅ Fixed duplicate for ${email}`);
+                }
+            } catch (error) {
+                errors.push(`Failed to fix duplicate for ${email}: ${error.message}`);
+                console.error(`❌ Error fixing duplicate for ${email}:`, error);
+            }
+        }
+        
+        res.status(200).json({ 
+            message: `Successfully fixed ${fixedCount} duplicate users`,
+            fixedCount,
+            errors: errors.length > 0 ? errors : null
+        });
+        
+    } catch (error) {
+        console.error("❌ Error fixing duplicate users:", error);
         res.status(500).json({ error: "Internal server error: " + error.message });
     }
 }

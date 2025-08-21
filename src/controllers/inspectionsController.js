@@ -11,17 +11,47 @@ export async function getInspectionsByUserId(req, res) {
         try {
             console.log('🔄 Ensuring user exists in database...');
             const actualEmail = userEmail || (userId + '@clerk.user');
-            await sql`
-                INSERT INTO users (id, email, role) 
-                VALUES (${userId}, ${actualEmail}, 'user')
-                ON CONFLICT (id) DO UPDATE SET 
-                    email = CASE 
-                        WHEN users.email LIKE '%@clerk.user' AND ${userEmail} IS NOT NULL 
-                        THEN ${actualEmail}
-                        ELSE users.email 
-                    END
+            
+            // First, check if there's an existing user with this email but different ID
+            // This handles the case where user was promoted by email before first login
+            const existingUserByEmail = await sql`
+                SELECT id, email, role FROM users 
+                WHERE email = ${actualEmail} AND id != ${userId}
             `;
-            console.log('✅ User ensured in database with email:', actualEmail);
+            const existingUser = (existingUserByEmail.rows || existingUserByEmail)[0];
+            
+            if (existingUser && actualEmail !== userId + '@clerk.user') {
+                // User exists with this email but different ID - update their ID to the Clerk ID
+                console.log(`🔄 Found existing user with email ${actualEmail}, updating ID from ${existingUser.id} to ${userId}`);
+                
+                await sql`
+                    UPDATE users 
+                    SET id = ${userId}
+                    WHERE email = ${actualEmail} AND id = ${existingUser.id}
+                `;
+                
+                // Also update any existing inspection records
+                await sql`
+                    UPDATE vehicle_inspections 
+                    SET user_id = ${userId}
+                    WHERE user_id = ${existingUser.id}
+                `;
+                
+                console.log('✅ User ID updated to match Clerk ID, preserving admin role');
+            } else {
+                // Normal user creation/update
+                await sql`
+                    INSERT INTO users (id, email, role) 
+                    VALUES (${userId}, ${actualEmail}, 'user')
+                    ON CONFLICT (id) DO UPDATE SET 
+                        email = CASE 
+                            WHEN users.email LIKE '%@clerk.user' AND ${userEmail} IS NOT NULL 
+                            THEN ${actualEmail}
+                            ELSE users.email 
+                        END
+                `;
+                console.log('✅ User ensured in database with email:', actualEmail);
+            }
         } catch (userError) {
             console.log('⚠️ User creation failed (may already exist):', userError.message);
         }
@@ -145,17 +175,46 @@ export async function getSingleInspection(req, res) {
             try {
                 console.log('🔄 Ensuring user exists in database...');
                 const actualEmail = userEmail || (userId + '@clerk.user');
-                await sql`
-                    INSERT INTO users (id, email, role) 
-                    VALUES (${userId}, ${actualEmail}, 'user')
-                    ON CONFLICT (id) DO UPDATE SET 
-                        email = CASE 
-                            WHEN users.email LIKE '%@clerk.user' AND ${userEmail} IS NOT NULL 
-                            THEN ${actualEmail}
-                            ELSE users.email 
-                        END
+                
+                // First, check if there's an existing user with this email but different ID
+                const existingUserByEmail = await sql`
+                    SELECT id, email, role FROM users 
+                    WHERE email = ${actualEmail} AND id != ${userId}
                 `;
-                console.log('✅ User ensured in database with email:', actualEmail);
+                const existingUser = (existingUserByEmail.rows || existingUserByEmail)[0];
+                
+                if (existingUser && actualEmail !== userId + '@clerk.user') {
+                    // User exists with this email but different ID - update their ID
+                    console.log(`🔄 Found existing user with email ${actualEmail}, updating ID from ${existingUser.id} to ${userId}`);
+                    
+                    await sql`
+                        UPDATE users 
+                        SET id = ${userId}
+                        WHERE email = ${actualEmail} AND id = ${existingUser.id}
+                    `;
+                    
+                    // Also update any existing inspection records
+                    await sql`
+                        UPDATE vehicle_inspections 
+                        SET user_id = ${userId}
+                        WHERE user_id = ${existingUser.id}
+                    `;
+                    
+                    console.log('✅ User ID updated to match Clerk ID');
+                } else {
+                    // Normal user creation/update
+                    await sql`
+                        INSERT INTO users (id, email, role) 
+                        VALUES (${userId}, ${actualEmail}, 'user')
+                        ON CONFLICT (id) DO UPDATE SET 
+                            email = CASE 
+                                WHEN users.email LIKE '%@clerk.user' AND ${userEmail} IS NOT NULL 
+                                THEN ${actualEmail}
+                                ELSE users.email 
+                            END
+                    `;
+                    console.log('✅ User ensured in database with email:', actualEmail);
+                }
             } catch (userError) {
                 console.log('⚠️ User creation failed (may already exist):', userError.message);
             }
