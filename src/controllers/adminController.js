@@ -605,26 +605,34 @@ export async function updateInspection(req, res) {
             
             // Insert new photos
             for (const photo of updateData.photos) {
-                if (photo.uri && photo.width && photo.height) {
+                if (photo.cloudinary_url && photo.cloudinary_public_id) {
                     try {
                         await sql`
                             INSERT INTO inspection_images (
                                 inspection_id, 
-                                image_uri, 
+                                cloudinary_url, 
+                                cloudinary_public_id,
+                                file_name,
                                 width, 
                                 height, 
-                                file_size
+                                file_size,
+                                image_type,
+                                created_at
                             ) VALUES (
                                 ${id}, 
-                                ${photo.uri}, 
-                                ${photo.width}, 
-                                ${photo.height}, 
-                                ${photo.fileSize || null}
+                                ${photo.cloudinary_url}, 
+                                ${photo.cloudinary_public_id},
+                                ${photo.name || `photo_${Date.now()}`},
+                                ${photo.width || null}, 
+                                ${photo.height || null}, 
+                                ${photo.fileSize || null},
+                                'defect_photo',
+                                ${new Date()}
                             )
                         `;
-                        console.log('📸 Stored photo metadata:', photo.uri);
+                        console.log('📸 Stored Cloudinary photo metadata:', photo.cloudinary_url);
                     } catch (photoError) {
-                        console.error('❌ Error storing photo metadata:', photoError);
+                        console.error('❌ Error storing Cloudinary photo metadata:', photoError);
                         // Don't fail the entire update for photo errors
                     }
                 }
