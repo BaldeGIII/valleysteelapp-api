@@ -149,7 +149,12 @@ export async function createInspection(req, res){
             RETURNING *
         `
         
-        res.status(201).json(inspection[0]);
+        // Return the inspection in a consistent format
+        const createdInspection = inspection.rows?.[0] || inspection[0];
+        res.status(201).json({ 
+            message: "Inspection created successfully",
+            inspection: createdInspection 
+        });
 
     } catch (error) {
         console.error("Error creating inspection:", error);
