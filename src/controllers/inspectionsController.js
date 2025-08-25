@@ -155,6 +155,10 @@ export async function createInspection(req, res){
         
         // Handle photos if provided
         let photoResults = [];
+        console.log(`📸 Photos received in createInspection:`, photos);
+        console.log(`📸 Photos type:`, typeof photos);
+        console.log(`📸 Photos length:`, photos ? photos.length : 0);
+        
         if (photos && photos.length > 0) {
             console.log(`📸 Processing ${photos.length} photos for inspection ${createdInspection.id}`);
             
@@ -163,12 +167,12 @@ export async function createInspection(req, res){
                 try {
                     const photoRecord = await sql`
                         INSERT INTO inspection_images (
-                            inspection_id, file_name, drive_file_id, 
-                            image_type, created_at, uploaded_by
+                            inspection_id, file_name, drive_file_id, image_uri,
+                            image_type, created_at, uploaded_by, width, height, file_size
                         )
                         VALUES (
-                            ${createdInspection.id}, ${photo.name}, ${`local_${Date.now()}`}, 
-                            'defect_photo', ${new Date()}, ${user_id}
+                            ${createdInspection.id}, ${photo.name || `photo_${Date.now()}`}, ${`local_${Date.now()}`}, ${photo.uri},
+                            'defect_photo', ${new Date()}, ${user_id}, ${photo.width || null}, ${photo.height || null}, ${photo.fileSize || null}
                         )
                         RETURNING *
                     `;
@@ -318,6 +322,7 @@ export async function getSingleInspection(req, res) {
 
         // Fetch associated photos
         try {
+            console.log(`📸 Fetching photos for inspection ${id}`);
             const photosResult = await sql`
                 SELECT * FROM inspection_images 
                 WHERE inspection_id = ${id}
@@ -325,8 +330,20 @@ export async function getSingleInspection(req, res) {
             `;
             
             const photos = photosResult.rows || photosResult;
-            inspection.photos = photos || [];
+            console.log(`📸 Raw photos from database:`, photos);
+            console.log(`📸 Photos count:`, photos ? photos.length : 0);
+            
+            // Transform photos to include the expected URL field
+            inspection.photos = (photos || []).map(photo => ({
+                ...photo,
+                // Use stored image_uri for local photos
+                uri: photo.image_uri,
+                google_drive_url: photo.drive_file_id && !photo.drive_file_id.startsWith('local_') ? 
+                    `https://drive.google.com/file/d/${photo.drive_file_id}/view` : null,
+                name: photo.file_name
+            }));
             console.log(`📸 Found ${inspection.photos.length} photos for inspection ${id}`);
+            console.log('📸 Transformed photo details:', inspection.photos);
         } catch (photoError) {
             console.error('Error fetching photos:', photoError);
             inspection.photos = [];
