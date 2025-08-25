@@ -595,6 +595,44 @@ export async function updateInspection(req, res) {
         `;
         
         const updateResult = result.rows || result;
+        
+        // Handle photo updates if provided
+        if (updateData.photos !== undefined && Array.isArray(updateData.photos)) {
+            console.log('📸 Updating photos for inspection:', id);
+            
+            // Delete existing photos for this inspection
+            await sql`DELETE FROM inspection_images WHERE inspection_id = ${id}`;
+            
+            // Insert new photos
+            for (const photo of updateData.photos) {
+                if (photo.uri && photo.width && photo.height) {
+                    try {
+                        await sql`
+                            INSERT INTO inspection_images (
+                                inspection_id, 
+                                image_uri, 
+                                width, 
+                                height, 
+                                file_size
+                            ) VALUES (
+                                ${id}, 
+                                ${photo.uri}, 
+                                ${photo.width}, 
+                                ${photo.height}, 
+                                ${photo.fileSize || null}
+                            )
+                        `;
+                        console.log('📸 Stored photo metadata:', photo.uri);
+                    } catch (photoError) {
+                        console.error('❌ Error storing photo metadata:', photoError);
+                        // Don't fail the entire update for photo errors
+                    }
+                }
+            }
+            
+            console.log(`📸 Updated ${updateData.photos.length} photos for inspection ${id}`);
+        }
+        
         console.log('Update result:', updateResult);
         console.log('✅ Inspection updated successfully');
         

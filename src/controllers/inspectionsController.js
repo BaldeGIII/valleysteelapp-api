@@ -315,8 +315,24 @@ export async function getSingleInspection(req, res) {
                 inspection.truck_trailer_items = {};
             }
         }
+
+        // Fetch associated photos
+        try {
+            const photosResult = await sql`
+                SELECT * FROM inspection_images 
+                WHERE inspection_id = ${id}
+                ORDER BY created_at DESC
+            `;
+            
+            const photos = photosResult.rows || photosResult;
+            inspection.photos = photos || [];
+            console.log(`📸 Found ${inspection.photos.length} photos for inspection ${id}`);
+        } catch (photoError) {
+            console.error('Error fetching photos:', photoError);
+            inspection.photos = [];
+        }
         
-        console.log('Returning parsed inspection:', inspection);
+        console.log('Returning parsed inspection with photos:', inspection);
         res.status(200).json(inspection);
         
     } catch (error) {
