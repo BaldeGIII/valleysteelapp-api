@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { Readable } from 'stream';
 
 class GoogleDriveService {
     constructor() {
@@ -25,7 +26,7 @@ class GoogleDriveService {
 
             const media = {
                 mimeType: mimeType,
-                body: require('stream').Readable.from(fileBuffer),
+                body: Readable.from(fileBuffer),
             };
 
             const response = await this.drive.files.create({

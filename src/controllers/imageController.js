@@ -16,8 +16,7 @@ export async function uploadInspectionImage(req, res) {
 
         // Validate inspection exists
         const inspection = await sql`
-            SELECT id, vehicle_id FROM vehicle_inspections 
-            WHERE id = ${inspectionId}
+            SELECT id FROM vehicle_inspections WHERE id = ${inspectionId}
         `;
         
         if (inspection.length === 0) {
