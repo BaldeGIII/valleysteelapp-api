@@ -165,22 +165,25 @@ export async function createInspection(req, res){
             // Store Cloudinary photo metadata in database
             for (const photo of photos) {
                 try {
+                    console.log(`🔒 Storing PRIVATE photo metadata: ${photo.name}`);
                     const photoRecord = await sql`
                         INSERT INTO inspection_images (
                             inspection_id, file_name, cloudinary_url, cloudinary_public_id,
-                            image_type, created_at, uploaded_by, width, height, file_size
+                            image_type, created_at, uploaded_by, width, height, file_size,
+                            is_private, resource_type, format
                         )
                         VALUES (
                             ${createdInspection.id}, ${photo.name || `photo_${Date.now()}`}, ${photo.cloudinary_url}, ${photo.cloudinary_public_id},
-                            'defect_photo', ${new Date()}, ${user_id}, ${photo.width || null}, ${photo.height || null}, ${photo.fileSize || null}
+                            'defect_photo', ${new Date()}, ${user_id}, ${photo.width || null}, ${photo.height || null}, ${photo.fileSize || null},
+                            ${photo.isPrivate || true}, ${photo.resourceType || 'image'}, ${photo.format || 'jpg'}
                         )
                         RETURNING *
                     `;
                     
                     photoResults.push(photoRecord.rows?.[0] || photoRecord[0]);
-                    console.log(`✅ Cloudinary photo metadata stored: ${photo.name}`);
+                    console.log(`✅ PRIVATE photo metadata stored: ${photo.name}`);
                 } catch (photoError) {
-                    console.error(`❌ Failed to store Cloudinary photo metadata for ${photo.name}:`, photoError);
+                    console.error(`❌ Failed to store PRIVATE photo metadata for ${photo.name}:`, photoError);
                 }
             }
         }
