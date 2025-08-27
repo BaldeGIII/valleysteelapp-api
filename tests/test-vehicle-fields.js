@@ -1,4 +1,4 @@
-import { sql } from './src/config/db.js';
+import { sql } from '../src/config/db.js';
 
 async function testVehicleOrganizationFields() {
     try {
