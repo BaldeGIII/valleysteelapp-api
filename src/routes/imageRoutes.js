@@ -3,10 +3,11 @@ import multer from 'multer';
 import { 
     uploadInspectionImage, 
     getInspectionImages, 
-    deleteInspectionImage 
+    deleteInspectionImage,
+    getFreshPhotoUrl
 } from '../controllers/imageController.js';
 
-const router = express.Router();
+const router = express.Router();``
 
 // Configure multer for memory storage
 const upload = multer({
@@ -28,5 +29,8 @@ const upload = multer({
 router.post('/inspections/:inspectionId/images', upload.single('image'), uploadInspectionImage);
 router.get('/inspections/:inspectionId/images', getInspectionImages);
 router.delete('/images/:imageId', deleteInspectionImage);
+
+// Route to get fresh URL for private photos (handles expiration)
+router.get('/photos/:photoId/fresh-url', getFreshPhotoUrl);
 
 export default router;

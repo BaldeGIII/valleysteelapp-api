@@ -170,12 +170,13 @@ export async function createInspection(req, res){
                         INSERT INTO inspection_images (
                             inspection_id, file_name, cloudinary_url, cloudinary_public_id,
                             image_type, created_at, uploaded_by, width, height, file_size,
-                            is_private, resource_type, format
+                            is_private, resource_type, format, vehicle_id, vehicle_folder, context_metadata
                         )
                         VALUES (
                             ${createdInspection.id}, ${photo.name || `photo_${Date.now()}`}, ${photo.cloudinary_url}, ${photo.cloudinary_public_id},
                             'defect_photo', ${new Date()}, ${user_id}, ${photo.width || null}, ${photo.height || null}, ${photo.fileSize || null},
-                            ${photo.isPrivate || true}, ${photo.resourceType || 'image'}, ${photo.format || 'jpg'}
+                            ${photo.isPrivate || true}, ${photo.resourceType || 'image'}, ${photo.format || 'jpg'}, 
+                            ${photo.vehicle || vehicle}, ${photo.vehicleFolder || null}, ${JSON.stringify(photo.context || {})}
                         )
                         RETURNING *
                     `;
